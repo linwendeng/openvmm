@@ -24,7 +24,7 @@ fn pasid_capabilities_for_guest(
     capabilities: crate::iommufd_nesting::DeviceIommuCaps,
 ) -> Option<crate::PasidCapabilities> {
     (ssid_bits != 0 && capabilities.max_pasid_log2 != 0).then_some(crate::PasidCapabilities {
-        width: capabilities.max_pasid_log2,
+        width: capabilities.max_pasid_log2.min(ssid_bits).min(20),
         exec: capabilities.pasid_exec,
         privileged: capabilities.pasid_priv,
     })
@@ -290,6 +290,7 @@ impl AsyncResolveResource<PciDeviceHandleKind, VfioCdevDeviceHandle> for VfioCde
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_with_tracing::test;
 
     #[test]
     fn pasid_capabilities_require_guest_and_endpoint_support() {
@@ -314,5 +315,24 @@ mod tests {
                 privileged: true,
             })
         );
+    }
+
+    #[test]
+    fn pasid_width_is_bounded_by_guest_endpoint_and_architecture() {
+        for (ssid_bits, endpoint_bits, expected) in [(8, 14, 8), (20, 14, 14), (31, 31, 20)] {
+            let capabilities = crate::iommufd_nesting::DeviceIommuCaps {
+                max_pasid_log2: endpoint_bits,
+                pasid_exec: false,
+                pasid_priv: false,
+            };
+            assert_eq!(
+                pasid_capabilities_for_guest(ssid_bits, capabilities),
+                Some(crate::PasidCapabilities {
+                    width: expected,
+                    exec: false,
+                    privileged: false,
+                })
+            );
+        }
     }
 }

@@ -684,6 +684,7 @@ impl PetriVmConfigOpenVmm {
                 PcieIommuConfig::Smmu {
                     accel: false,
                     oas: openvmm_defs::config::SmmuOas::Auto,
+                    ssidsize: openvmm_defs::config::SmmuSsidSize::Auto,
                 },
             ));
         }
@@ -705,6 +706,7 @@ impl PetriVmConfigOpenVmm {
                 PcieIommuConfig::Smmu {
                     accel: true,
                     oas: openvmm_defs::config::SmmuOas::Auto,
+                    ssidsize: openvmm_defs::config::SmmuSsidSize::Auto,
                 },
             ));
         }

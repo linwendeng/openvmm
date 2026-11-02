@@ -730,6 +730,10 @@ impl VfioAssignedPciDevice {
         value: ByteEnabledDwordWrite,
         routed_rid: u16,
     ) -> IoResult {
+        if let Some(pasid) = self.synthetic_pasid.as_mut() {
+            pasid.reset();
+        }
+
         let accel = self
             .accel_stream
             .as_mut()
