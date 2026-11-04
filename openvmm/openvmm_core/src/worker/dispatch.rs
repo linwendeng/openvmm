@@ -205,8 +205,20 @@ pub fn new_device_thread() -> (JoinHandle<()>, DefaultDriver) {
 }
 
 impl Manifest {
-    fn from_config(config: Config) -> Self {
-        Self {
+    fn from_config(mut config: Config) -> anyhow::Result<Self> {
+        if cfg!(guest_arch = "aarch64")
+            && !matches!(
+                &config.load_mode,
+                LoadMode::Linux {
+                    boot_mode: openvmm_defs::config::LinuxDirectBootMode::DeviceTree,
+                    ..
+                }
+            )
+        {
+            pcie_topology::ensure_unique_iort_segments(&mut config.pcie_root_complexes)?;
+        }
+
+        Ok(Self {
             load_mode: config.load_mode,
             floppy_disks: config.floppy_disks,
             ide_disks: config.ide_disks,
@@ -241,7 +253,7 @@ impl Manifest {
             chipset_capabilities: config.chipset_capabilities,
             layout: config.layout,
             rtc_delta_milliseconds: config.rtc_delta_milliseconds,
-        }
+        })
     }
 }
 
@@ -342,7 +354,7 @@ impl Worker for VmWorker {
     fn new(parameters: Self::Parameters) -> anyhow::Result<Self> {
         let (device_thread, device_driver) = new_device_thread();
 
-        let manifest = Manifest::from_config(parameters.cfg);
+        let manifest = Manifest::from_config(parameters.cfg)?;
 
         let hypervisor = block_on(ResourceResolver::new().resolve(parameters.hypervisor, ()))
             .context("failed to resolve hypervisor backend")?;
