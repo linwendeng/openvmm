@@ -205,7 +205,7 @@ pub fn new_device_thread() -> (JoinHandle<()>, DefaultDriver) {
 }
 
 impl Manifest {
-    fn from_config(mut config: Config) -> anyhow::Result<Self> {
+    fn from_config(config: Config) -> anyhow::Result<Self> {
         if cfg!(guest_arch = "aarch64")
             && !matches!(
                 &config.load_mode,
@@ -215,7 +215,7 @@ impl Manifest {
                 }
             )
         {
-            pcie_topology::ensure_unique_iort_segments(&mut config.pcie_root_complexes)?;
+            pcie_topology::validate_iort_segments(&config.pcie_root_complexes)?;
         }
 
         Ok(Self {

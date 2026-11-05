@@ -123,12 +123,11 @@ they do not generate PASID-tagged requests. Only linear CD tables are supported.
 ACPI IORT identifies a PCI root complex by its PCI segment number. Linux
 assumes a one-to-one mapping between segment numbers and root complexes, so
 multiple root complexes with the same segment can cause devices to resolve to
-the wrong IOMMU node. On AArch64 ACPI boots, OpenVMM preserves the first
-root-complex segment and any already-unique configured segments, and assigns
-unused segment numbers to later duplicates before building the PCI topology.
-The guest therefore sees those root complexes as distinct PCI domains. Configure
-unique segments directly when possible; Device Tree boots retain their supplied
-segment numbers.
+the wrong IOMMU node. On AArch64 ACPI boots, OpenVMM rejects duplicate
+root-complex segments before building the PCI topology. The caller must assign
+unique segments when generating the topology; OpenVMM does not silently rewrite
+guest PCI domains. Device Tree boots retain their supplied segment numbers and
+the existing bus-range validation.
 
 ### StreamID binding
 

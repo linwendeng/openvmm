@@ -14,7 +14,7 @@ use pci_core::spec::caps::acs::DEFAULT_ACS_CAP_MASK;
 use pci_core::spec::caps::pci_express::MaxEndEndTlpPrefixes;
 use pcie::GenericPciePortDefinition;
 use pcie::PciePortSettings;
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 /// Builds port PCIe settings from manifest flags.
 ///
@@ -49,36 +49,20 @@ pub(super) fn build_port_definition(port_cfg: &PciePortConfig) -> GenericPciePor
     }
 }
 
-/// Gives every PCI root complex a unique segment for ACPI IORT.
-///
-/// Linux matches IORT PCI root-complex nodes by segment and assumes a
-/// one-to-one relationship between a segment and a root complex. Preserve the
-/// first occurrence and all already-unique configured segments; move later
-/// duplicates to unused segment numbers.
-pub(super) fn ensure_unique_iort_segments(
-    root_complexes: &mut [PcieRootComplexConfig],
+/// Rejects ambiguous ACPI IORT root-complex identities without changing BDFs.
+pub(super) fn validate_iort_segments(
+    root_complexes: &[PcieRootComplexConfig],
 ) -> anyhow::Result<()> {
-    let mut used_segments: HashSet<u16> = root_complexes.iter().map(|rc| rc.segment).collect();
-    let mut seen_segments = HashSet::new();
-
+    let mut segments = HashMap::new();
     for root_complex in root_complexes {
-        let original_segment = root_complex.segment;
-        if seen_segments.insert(original_segment) {
-            continue;
+        if let Some(previous) = segments.insert(root_complex.segment, &root_complex.name) {
+            anyhow::bail!(
+                "PCI root complexes '{}' and '{}' share segment {}; ARM64 ACPI IORT requires a unique segment per root complex; fix the supplied PCI topology",
+                previous,
+                root_complex.name,
+                root_complex.segment,
+            );
         }
-
-        let segment = (0..=u16::MAX)
-            .find(|segment| !used_segments.contains(segment))
-            .ok_or_else(|| anyhow::anyhow!("no unused PCI segment is available for IORT"))?;
-        root_complex.segment = segment;
-        used_segments.insert(segment);
-        seen_segments.insert(segment);
-        tracing::warn!(
-            root_complex = %root_complex.name,
-            original_segment,
-            segment,
-            "assigned a unique PCI segment required by ACPI IORT"
-        );
     }
 
     Ok(())
@@ -156,21 +140,27 @@ mod tests {
     }
 
     #[test]
-    fn assigns_unique_iort_segments_preserving_existing_unique_values() {
-        let mut rcs = [
-            rc("rc0", 0, 0, 4),
-            rc("rc1", 0, 5, 9),
-            rc("rc2", 2, 0, 4),
-            rc("rc3", 0, 10, 14),
+    fn rejects_duplicate_iort_segments_even_with_disjoint_bus_ranges() {
+        let rcs = [rc("rc0", 0, 0, 4), rc("rc1", 0, 5, 9)];
+        validate_pcie_root_complexes(&rcs).unwrap();
+        let error = validate_iort_segments(&rcs).unwrap_err().to_string();
+        assert!(error.contains("'rc0' and 'rc1' share segment 0"));
+        assert_eq!(rcs[1].segment, 0);
+    }
+
+    #[test]
+    fn preserves_unique_iort_segments() {
+        let rcs = [
+            rc("io", 0, 0, 127),
+            rc("gpu0", 7, 128, 143),
+            rc("gpu1", 2, 144, 159),
         ];
-
-        ensure_unique_iort_segments(&mut rcs).unwrap();
-
+        validate_iort_segments(&rcs).unwrap();
         assert_eq!(
             rcs.iter().map(|rc| rc.segment).collect::<Vec<_>>(),
-            [0, 1, 2, 3]
+            [0, 7, 2]
         );
-        validate_pcie_root_complexes(&rcs).unwrap();
+        validate_iort_segments(&[]).unwrap();
     }
 
     #[test]
